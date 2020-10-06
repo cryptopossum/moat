@@ -1,0 +1,73 @@
+
+import "util.scrypt";
+
+contract Token {
+    public function transfer(bytes txPreimage, bytes fromRecord, bytes fromMerklePath, Sig senderSig, 
+        bytes toRecord, bytes toMerklePath, bytes insertPoint, bytes insertPointMerklePath,
+		int amount, int utxoAmount) {
+        require(amount>0);
+        require(utxoAmount>=0);
+        // this ensures the preimage is for the current tx
+		require(Tx.checkPreimage(txPreimage));
+        bytes sender = fromRecord[:32];
+        // authorize
+        require(checkSig(senderSig, PubKey(sender)));
+//require(checkDataSig(fromRecord, senderSig, PubKey(sender)));
+        // read previous locking script
+        bytes lockingScript = Util.scriptCode(txPreimage);
+        int scriptLen = len(lockingScript);
+        int dataLen = 8;
+        int amountLength = 8;
+        int dataStart = scriptLen - dataLen;
+        bytes merkleRoot = lockingScript[dataStart:dataStart+32];
+
+        PubKey pk0 = PubKey(fromRecord[:32]);
+        int balance0 = unpack(fromRecord[32 : 32 + amountLength]);
+
+        PubKey pk1 = PubKey(toRecord[:32]);
+        int balance1 = unpack(toRecord[32 : 32 + amountLength]);
+        require(balance0-amount>=0);
+        require(balance1+amount>=0);
+        bytes newFromRecord = pk0+num2bin(balance0 - amount, amountLength)+merkleRoot;
+        bytes newToRecord = pk1+num2bin(balance1 + amount, amountLength)+merkleRoot;
+        merkleRoot = this.updateLeaf(sha256(fromRecord), sha256(newFromRecord), fromMerklePath, merkleRoot);
+        if (toMerklePath != b'') {
+            merkleRoot = this.updateLeaf(sha256(toRecord), sha256(newToRecord), toMerklePath, merkleRoot);
+        } else {
+            require(balance1==0);
+            bytes insertPointHash = sha256(insertPoint);
+            merkleRoot = this.updateLeaf(insertPointHash, sha256(insertPointHash+sha256(newToRecord)), insertPointMerklePath, merkleRoot);
+        }
+        // write new locking script
+        bytes lockingScript_ = lockingScript[: dataStart] + merkleRoot;
+        bytes output = Util.buildOutput(lockingScript_, utxoAmount);
+        require(hash256(output) == Util.hashOutputs(txPreimage));
+    }
+
+    function calculateMerkleRoot(bytes leaf, bytes merklePath):bytes {
+        int i = 0;
+        int merklePathLength = len(merklePath)/33;
+        bytes merkleValue = leaf;
+        loop (20) {
+            i=i+1;
+            if (i<merklePathLength) {
+                int left = unpack(merklePath[:i*33+33]);
+                if (left)
+                    merkleValue = sha256(merkleValue + merklePath[i*33:i*33+32]);
+                else
+                    merkleValue = sha256(merklePath[i*33:i*33+32] + merkleValue);
+            }
+        }
+        return merklePath;
+    }
+    function verifyLeaf(bytes leaf, bytes merklePath, bytes merkleRoot):bool {
+        bytes merkleValue = this.calculateMerkleRoot(leaf, merklePath);
+        require(merkleValue==merkleRoot);
+        return merkleValue==merkleRoot;
+    }
+
+    function updateLeaf(bytes oldLeaf, bytes leaf, bytes merklePath, bytes oldMerkleRoot): bytes {
+        require(this.verifyLeaf(oldLeaf, merklePath, oldMerkleRoot));
+        return this.calculateMerkleRoot(leaf, merklePath);
+    }
+}
