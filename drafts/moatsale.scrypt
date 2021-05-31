@@ -1,0 +1,15 @@
+//moat sale: The crowdraise for MOAT
+
+contract MOATSALE {
+	PubKey theCastle;
+
+	public function buy(SigHashPreimage preImage, int depositAmount, int changeAmount){
+		require(depositAmount > 0);
+    
+	}
+	
+	public function closeSale(Sig sig, PubKey pubKey){
+	require(hash160(pubKey) == this.theCastle);
+        require(checkSig(sig, pubKey));
+	}
+}
