@@ -2,6 +2,7 @@
 
 contract MOATSALE {
 	PubKey theCastle;
+	int endOfSale;
 
 	public function buy(SigHashPreimage preImage, int depositAmount, int changeAmount){
 		require(depositAmount > 0);
@@ -10,6 +11,8 @@ contract MOATSALE {
 	
 	public function closeSale(Sig sig, PubKey pubKey){
 	require(hash160(pubKey) == this.theCastle);
+		require(Util.nLocktime(txPreimage) >= this.endOfSale);
         require(checkSig(sig, pubKey));
+
 	}
 }
